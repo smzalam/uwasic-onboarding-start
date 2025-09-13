@@ -3,7 +3,7 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, FallingEdge, with_timeout
+from cocotb.triggers import RisingEdge, FallingEdge, with_timeout, Timer
 from cocotb.result import SimTimeoutError
 from cocotb.triggers import ClockCycles
 from cocotb.types import Logic
@@ -85,39 +85,38 @@ async def send_spi_transaction(dut, r_w, address, data):
     await ClockCycles(dut.clk, 600)
     return ui_in_logicarray(ncs, bit, sclk)
 
-async def measure_period(sig, n_cycles=8, units="us"):
+async def _wait_edge_poll(sig, rising=True, step_ns=10):
+    """Poll 'sig' until a rising (default) or falling edge is observed."""
+    prev = int(sig.value)
+    while True:
+        await Timer(step_ns, units="ns")
+        cur = int(sig.value)
+        if rising and prev == 0 and cur == 1:
+            return
+        if (not rising) and prev == 1 and cur == 0:
+            return
+        prev = cur
+        
+async def measure_period(sig, n_cycles=8):
     """
-    Measure period of a signal by capturing n_cycles rising edges.
-    Assert that each measured period corresponds to ~3 kHz.
-    
-    sig      : cocotb handle (e.g., dut.uo_out[0])
-    n_cycles : number of cycles to check
-    units    : time units ("ns", "us", "ms")
-
-    Returns: list of measured frequencies (in kHz)
+    Measure period by capturing n rising edges on 'sig' (bit-select safe).
+    Returns a list of measured frequencies in kHz and asserts ~3 kHz each.
     """
     timestamps = []
     freqs = []
 
-    # Wait for first rising edge to align
-    await RisingEdge(sig)
+    # Align to next rising edge
+    await _wait_edge_poll(sig, rising=True)
+
+    # Capture n rising edges
     for _ in range(n_cycles):
-        await RisingEdge(sig)
-        timestamps.append(get_sim_time(units=units))
+        await _wait_edge_poll(sig, rising=True)
+        timestamps.append(get_sim_time(units="us"))
 
-    # Compute diffs and assert each
-    diffs = [t2 - t1 for t1, t2 in zip(timestamps, timestamps[1:])]
+    # Compute deltas and per-cycle frequency
+    diffs = [t2 - t1 for t1, t2 in zip(timestamps, timestamps[1:])] 
     for d in diffs:
-        if units == "us":
-            freq_khz = 1_000.0 / d
-        elif units == "ns":
-            freq_khz = 1e6 / d
-        elif units == "ms":
-            freq_khz = 1.0 / d
-        else:   
-            raise ValueError("Unsupported units")
-
-        # Assert each instance is ~3 kHz
+        freq_khz = 1_000.0 / d
         assert abs(freq_khz - 3.0) / 3.0 < 0.01, f"Expected ~3 kHz, got {freq_khz:.2f} kHz"
         freqs.append(freq_khz)
 
@@ -125,33 +124,51 @@ async def measure_period(sig, n_cycles=8, units="us"):
 
 async def measure_duty(sig, pwm_period_us=333.33, units="us"):
     """
-    Returns duty cycle in percent, robust to 0% and 100%.
+    Duty cycle (%) by polling; robust to 0% and 100%, including initial-high.
     """
-    # Try to see a rising edge within one PWM period
-    try:
-        await with_timeout(RisingEdge(sig), timeout_time=pwm_period_us, timeout_unit=units)
-    except SimTimeoutError:
-        # No rising edge for a whole period => ~0%
-        return 0.0
+    step_ns = 10 
 
-    t_start = get_sim_time(units=units)
+    now = get_sim_time(units=units)
+    deadline = now + pwm_period_us
 
-    # Try to see a falling edge within one PWM period
-    try:
-        await with_timeout(FallingEdge(sig), timeout_time=pwm_period_us, timeout_unit=units)
-    except SimTimeoutError:
-        # Stayed high for a whole period => ~100%
-        return 100.0
+    prev = int(sig.value)
+    if prev == 1:
+        t_start = now
+    else:
+        # Find a rising edge within one period; if none, it's ~0%
+        while get_sim_time(units=units) < deadline:
+            await Timer(step_ns, units="ns")
+            cur = int(sig.value)
+            if prev == 0 and cur == 1:
+                t_start = get_sim_time(units=units)
+                break
+            prev = cur
+        else:
+            return 0.0  # stayed low for a whole period
 
-    t_fall = get_sim_time(units=units)
+    # Try to find a falling edge within one PWM period after t_start
+    fall_deadline = t_start + pwm_period_us
+    prev = int(sig.value)
+    while get_sim_time(units=units) < fall_deadline:
+        await Timer(step_ns, units="ns")
+        cur = int(sig.value)
+        if prev == 1 and cur == 0:
+            t_fall = get_sim_time(units=units)
+            # Next rising edge to close the period
+            prev2 = cur
+            while True:
+                await Timer(step_ns, units="ns")
+                cur2 = int(sig.value)
+                if prev2 == 0 and cur2 == 1:
+                    t_end = get_sim_time(units=units)
+                    high_time = t_fall - t_start
+                    period = t_end - t_start
+                    return 0.0 if period <= 0 else (high_time / period) * 100.0
+                prev2 = cur2
+        prev = cur
 
-    # Next rising edge to complete the period
-    await RisingEdge(sig)
-    t_end = get_sim_time(units=units)
-
-    high_time = t_fall - t_start
-    period    = t_end - t_start
-    return 0.0 if period <= 0 else (high_time / period) * 100.0
+    # Never saw a falling edge ⇒ stayed high ≈ 100%
+    return 100.0
 
 @cocotb.test()
 async def test_spi(dut):
@@ -251,7 +268,7 @@ async def test_pwm_freq(dut):
     ui_in_val = await send_spi_transaction(dut, 1, 0x04, 0x80)
     await ClockCycles(dut.clk, 1000)
     
-    freqs = await measure_period(dut.uo_out[0], n_cycles=10, units="us")
+    freqs = await measure_period(dut.uo_out[0], n_cycles=10)
     dut._log.info(f"Measured frequencies (kHz): {freqs}")
     dut._log.info("PWM Frequency test completed successfully")
 
@@ -288,7 +305,7 @@ async def test_pwm_duty(dut):
     await ClockCycles(dut.clk, 1000)
     
     for i in range(10):
-        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33, units="us")
+        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33)
         dut._log.info(f"Measured duty cycle: {duty_cycle:.2f}%")
         assert 0.0 <= duty_cycle <= 1.0, f"Expected ~0%, got {duty_cycle:.2f}%"
     
@@ -297,7 +314,7 @@ async def test_pwm_duty(dut):
     await ClockCycles(dut.clk, 1000)
 
     for i in range(10):
-        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33, units="us")
+        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33)
         dut._log.info(f"Measured duty cycle: {duty_cycle:.2f}%")
         assert 99.0 <= duty_cycle <= 100.0, f"Expected 100%, got {duty_cycle:.2f}%"
 
@@ -306,7 +323,7 @@ async def test_pwm_duty(dut):
     await ClockCycles(dut.clk, 1000)
     
     for i in range(10):
-        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33, units="us")
+        duty_cycle = await measure_duty(dut.uo_out[0], pwm_period_us=333.33)
         dut._log.info(f"Measured duty cycle: {duty_cycle:.2f}%")
         assert 49.0 <= duty_cycle <= 51.0, f"Expected 50%, got {duty_cycle:.2f}%"
 
