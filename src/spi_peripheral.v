@@ -21,7 +21,6 @@ reg [6:0] address;
 reg [7:0] data;
 reg [5:0] bit_counter;
 reg nCS_reg, nCS_sync, nCS_prev, sCLK_reg, sCLK_sync, sCLK_prev, COPI_reg, COPI_sync;
-reg [7:0] reg_out_7_0, reg_out_15_8, reg_pwm_7_0, reg_pwm_15_8, reg_pwm_duty_cycle;
 reg transaction_complete, transaction_processed;
 
 always @(posedge clk or negedge rst_n)
@@ -42,11 +41,6 @@ begin
         transaction_complete <= 0;
         bit_counter <= 0;
         transaction_processed <= 0;
-        reg_out_7_0 <= 0;
-        reg_out_15_8 <= 0;
-        reg_pwm_7_0 <= 0;
-        reg_pwm_15_8 <= 0;
-        reg_pwm_duty_cycle <= 0;
     end else begin
         nCS_reg <= nCS;
         sCLK_reg <= sCLK;
@@ -103,20 +97,15 @@ end
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         transaction_processed <= 0;
-        reg_out_7_0 <= 0;
-        reg_out_15_8 <= 0;
-        reg_pwm_7_0 <= 0;
-        reg_pwm_15_8 <= 0;
-        reg_pwm_duty_cycle <= 0;
     end else if (transaction_complete && !transaction_processed) begin
         if (instruction_bit == 1'b1) begin
             if (address <= 7'h04) begin
                 case (address[4:0])
-                    5'h00: reg_out_7_0        <= data;
-                    5'h01: reg_out_15_8       <= data;
-                    5'h02: reg_pwm_7_0        <= data;
-                    5'h03: reg_pwm_15_8       <= data;
-                    5'h04: reg_pwm_duty_cycle <= data;
+                    5'h00: en_reg_out_7_0        <= data;
+                    5'h01: en_reg_out_15_8       <= data;
+                    5'h02: en_reg_pwm_7_0        <= data;
+                    5'h03: en_reg_pwm_15_8       <= data;
+                    5'h04: pwm_duty_cycle        <= data;
                     default: ;
                 endcase
             end
@@ -126,11 +115,5 @@ always @(posedge clk or negedge rst_n) begin
         transaction_processed <= 0;
     end
 end
-
-assign en_reg_out_7_0 = reg_out_7_0;
-assign en_reg_out_15_8 = reg_out_15_8;
-assign en_reg_pwm_7_0 = reg_pwm_7_0;
-assign en_reg_pwm_15_8 = reg_pwm_15_8;
-assign pwm_duty_cycle = reg_pwm_duty_cycle;
 
 endmodule
