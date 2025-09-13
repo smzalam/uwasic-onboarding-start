@@ -24,6 +24,19 @@ module tt_um_uwasic_onboarding_syed (
   wire [7:0] en_reg_pwm_15_8;
   wire [7:0] pwm_duty_cycle;
 
+  spi_peripheral spi_peripheral_inst (
+    .clk(clk),
+    .rst_n(rst_n),
+    .sCLK(sCLK),
+    .nCS(nCS),
+    .COPI(COPI),
+    .en_reg_out_7_0(en_reg_out_7_0),
+    .en_reg_out_15_8(en_reg_out_15_8),
+    .en_reg_pwm_7_0(en_reg_pwm_7_0),
+    .en_reg_pwm_15_8(en_reg_pwm_15_8),
+    .pwm_duty_cycle(pwm_duty_cycle)
+  );
+
   pwm_peripheral pwm_peripheral_inst (
     .clk(clk),
     .rst_n(rst_n),
