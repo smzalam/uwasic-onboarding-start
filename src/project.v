@@ -48,9 +48,6 @@ module tt_um_uwasic_onboarding_syed (
     .out({uio_out, uo_out})
   );
 
-  assign uo_out  = pwm_out[7:0];
-  assign uio_out = pwm_out[15:8];
-
   // List all unused inputs to prevent warnings
   wire _unused = &{ena, ui_in[7:3], uio_in, 1'b0};
 
