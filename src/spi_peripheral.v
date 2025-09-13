@@ -68,10 +68,10 @@ begin
                 instruction_bit <= COPI_sync;
             end else if (bit_counter >= 1 && bit_counter < 8)
             begin
-                address <= (address << 1) | COPI_sync;
+                address <= {address[5:0], COPI_sync};
             end else if (bit_counter >= 8 && bit_counter < 16)
             begin
-                data <= (data << 1) | COPI_sync;
+                data <= {data[6:0], COPI_sync};
             end
             if (bit_counter < 16)
                 bit_counter <= bit_counter + 1;
