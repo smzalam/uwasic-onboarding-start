@@ -40,7 +40,6 @@ begin
         data <= 0;
         transaction_complete <= 0;
         bit_counter <= 0;
-        transaction_processed <= 0;
     end else begin
         nCS_reg <= nCS;
         sCLK_reg <= sCLK;
