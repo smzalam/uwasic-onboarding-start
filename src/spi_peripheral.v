@@ -88,7 +88,6 @@ begin
         if (transaction_processed == 1)
         begin
             transaction_complete <= 0;
-            transaction_processed <= 0;
         end
     end
 end
