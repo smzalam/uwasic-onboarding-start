@@ -94,6 +94,11 @@ end
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
+        en_reg_out_15_8 <= 0;
+        en_reg_out_7_0 <= 0;
+        en_reg_pwm_15_8 <= 0;
+        en_reg_pwm_7_0 <= 0;
+        pwm_duty_cycle <= 0;
         transaction_processed <= 0;
     end else if (transaction_complete && !transaction_processed) begin
         if (instruction_bit == 1'b1) begin
@@ -103,7 +108,7 @@ always @(posedge clk or negedge rst_n) begin
                     5'h01: en_reg_out_15_8       <= data;
                     5'h02: en_reg_pwm_7_0        <= data;
                     5'h03: en_reg_pwm_15_8       <= data;
-                    5'h04: pwm_duty_cycle <= data;
+                    5'h04: pwm_duty_cycle        <= data;
                     default: ;
                 endcase
             end
